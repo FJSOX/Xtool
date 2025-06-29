@@ -1,20 +1,38 @@
 import sys
+import os
+import logging
 from PyQt5.QtWidgets import (
     QApplication, QWidget, QPushButton, QVBoxLayout, 
-    QHBoxLayout, QStackedWidget, QFrame
+    QHBoxLayout, QStackedWidget, QFrame,
+    QMessageBox  # 添加QMessageBox用于显示错误信息
 )
 from 编码转换_ui import EncodingConverterUI
 from 重命名_ui import RenameToolUI  # 新增导入
 
+# 配置日志系统
+log_file = os.path.join(os.path.dirname(sys.argv[0]), 'app.log')
+logging.basicConfig(
+    level=logging.DEBUG,
+    format='%(asctime)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.FileHandler(log_file, encoding='utf-8'),
+        logging.StreamHandler()
+    ]
+)
+logger = logging.getLogger(__name__)
+
 class MainUI(QWidget):
     def __init__(self):
         super().__init__()
+        logger.info("MainUI 初始化开始")
         self.setWindowTitle('我的小工具合集')
         self.setGeometry(100, 100, 800, 500)  # 调整窗口大小
         self.current_tool = None  # 记录当前显示的工具
         self.init_ui()
+        logger.info("MainUI 初始化完成")
 
     def init_ui(self):
+        logger.info("init_ui 开始")
         # 创建主布局为水平布局
         main_layout = QHBoxLayout()
         self.setLayout(main_layout)
@@ -68,8 +86,10 @@ class MainUI(QWidget):
         # 将左侧面板和右侧内容区域添加到主布局
         main_layout.addWidget(left_panel)
         main_layout.addWidget(self.right_panel)
+        logger.info("init_ui 完成")
 
     def show_encoding_tool(self):
+        logger.info("show_encoding_tool 被调用")
         # 如果有当前显示的工具，先隐藏它
         if self.current_tool:
             self.stacked_widget.setCurrentWidget(self.main_page)
@@ -79,6 +99,7 @@ class MainUI(QWidget):
         self.current_tool = self.encoding_tool
 
     def close_encoding_tool(self):
+        logger.info("close_encoding_tool 被调用")
         # 从堆叠窗口中移除并删除实例
         self.stacked_widget.removeWidget(self.encoding_tool)
         self.encoding_tool.deleteLater()
@@ -92,6 +113,7 @@ class MainUI(QWidget):
         self.current_tool = None
 
     def show_rename_tool(self):
+        logger.info("show_rename_tool 被调用")
         # 如果有当前显示的工具，先隐藏它
         if self.current_tool:
             self.stacked_widget.setCurrentWidget(self.main_page)
@@ -101,6 +123,7 @@ class MainUI(QWidget):
         self.current_tool = self.rename_tool
 
     def close_rename_tool(self):
+        logger.info("close_rename_tool 被调用")
         # 从堆叠窗口中移除并删除实例
         self.stacked_widget.removeWidget(self.rename_tool)
         self.rename_tool.deleteLater()
@@ -115,7 +138,18 @@ class MainUI(QWidget):
 
 # 主程序入口
 if __name__ == "__main__":
-    app = QApplication(sys.argv)
-    main_window = MainUI()
-    main_window.show()
-    sys.exit(app.exec_())
+    try:
+        logger.info("程序启动")
+        app = QApplication(sys.argv)
+        main_window = MainUI()
+        main_window.show()
+        sys.exit(app.exec_())
+    except Exception as e:
+        logger.critical("发生了一个致命错误：", exc_info=True)
+        # 弹出错误信息
+        msg = QMessageBox()
+        msg.setIcon(QMessageBox.Critical)
+        msg.setText("发生了一个错误：")
+        msg.setInformativeText(str(e))
+        msg.setWindowTitle("错误")
+        msg.exec_()
