@@ -1,6 +1,6 @@
 import os
 
-def batch_rename_files(file_paths, src_exts, target_ext, output_folder=None):
+def batch_rename_files(file_paths, src_exts, target_ext, output_folder=None, delete_original=False):
     """
     批量重命名文件后缀
     :param file_paths: 文件路径列表
@@ -61,6 +61,11 @@ def batch_rename_files(file_paths, src_exts, target_ext, output_folder=None):
             with open(file_path, 'rb') as src_file:
                 with open(new_file_path, 'wb') as dst_file:
                     dst_file.write(src_file.read())
+            if delete_original:
+                try:
+                    os.remove(file_path)
+                except Exception as e:
+                    failed_files.append((file_path, f"删除原文件失败: {str(e)}"))
             
             success_files.append((file_path, new_file_path))
             

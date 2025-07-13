@@ -1,8 +1,11 @@
 import os
+import configparser
 from PyQt5.QtWidgets import (
     QWidget, QPushButton, QVBoxLayout, QLabel, QLineEdit, 
-    QFileDialog, QHBoxLayout, QMessageBox, QComboBox, QListWidget
+    QFileDialog, QHBoxLayout, QMessageBox, QComboBox, QListWidget, QCheckBox
 )
+from PyQt5.QtCore import QSettings
+from PyQt5.QtGui import QPalette, QColor
 from 重命名 import batch_rename_files
 
 # 定义常用文件格式
@@ -19,10 +22,15 @@ COMMON_EXTENSIONS = [
 ]
 
 class RenameToolUI(QWidget):
+    CONFIG_FILE = os.path.join(os.path.dirname(__file__), "rename_config.ini")
+
     def __init__(self):
         super().__init__()
         self.selected_files = []  # 初始化文件列表
+        self._initialized = False  # 添加初始化标志
         self.init_ui()
+        self.load_settings()
+        self._initialized = True  # 初始化完成
 
     def init_ui(self):
         # 创建布局
@@ -95,6 +103,10 @@ class RenameToolUI(QWidget):
         layout.addWidget(output_folder_label)
         layout.addLayout(output_folder_layout)
 
+        # 添加“是否删除原文件”复选框
+        self.delete_original_checkbox = QCheckBox("重命名后删除原文件")
+        layout.addWidget(self.delete_original_checkbox)
+
         # 重命名按钮
         rename_button = QPushButton('开始重命名')
         layout.addWidget(rename_button)
@@ -110,6 +122,58 @@ class RenameToolUI(QWidget):
         file_button.clicked.connect(self.select_files)
         rename_button.clicked.connect(self.start_rename)
         output_folder_button.clicked.connect(self.select_output_folder)
+        self.delete_original_checkbox.stateChanged.connect(self.on_delete_checkbox_changed)
+
+        # 在输入框内容变化时调用
+        self.src_ext_input.textChanged.connect(self.update_style)
+        self.target_ext_input.textChanged.connect(self.update_style)
+        # 初始化时也调用一次
+        self.update_style()
+
+    def load_settings(self):
+        config = configparser.ConfigParser()
+        if os.path.exists(self.CONFIG_FILE):
+            config.read(self.CONFIG_FILE, encoding="utf-8")
+            # 恢复复选框状态
+            delete_original = config.getboolean("main", "delete_original", fallback=False)
+            self.delete_original_checkbox.setChecked(delete_original)
+            # 恢复输出文件夹
+            output_folder = config.get("main", "output_folder", fallback="")
+            self.output_folder_input.setText(output_folder)
+            # 恢复上次源文件夹
+            last_source_folder = config.get("main", "last_source_folder", fallback="")
+            self.last_source_folder = last_source_folder
+            if last_source_folder:
+                self.file_input.setText(f"上次源文件夹: {last_source_folder}")
+        else:
+            self.delete_original_checkbox.setChecked(False)
+            self.output_folder_input.setText("")
+            self.last_source_folder = ""
+
+        # 恢复自定义源文件后缀
+        self.src_ext_input.setText(config.get("main", "src_ext_input", fallback=""))
+        # 恢复自定义目标后缀
+        self.target_ext_input.setText(config.get("main", "target_ext_input", fallback=""))
+
+    def save_settings(self):
+        config = configparser.ConfigParser()
+        config["main"] = {
+            "delete_original": str(self.delete_original_checkbox.isChecked()),
+            "output_folder": self.output_folder_input.text(),
+            "last_source_folder": getattr(self, "last_source_folder", ""),
+            "src_ext_input": self.src_ext_input.text(),
+            "target_ext_input": self.target_ext_input.text(),
+        }
+        with open(self.CONFIG_FILE, "w", encoding="utf-8") as f:
+            config.write(f)
+
+    def showEvent(self, event):
+        self.load_settings()
+        super().showEvent(event)
+
+    def hideEvent(self, event):
+        self.save_settings()
+        super().hideEvent(event)
 
     def get_selected_extensions(self):
         """获取所有选中的源文件后缀"""
@@ -139,18 +203,33 @@ class RenameToolUI(QWidget):
             self.output_folder_input.setText(folder_path)
 
     def select_files(self):
+        # 使用上次的源文件夹作为默认打开路径
+        start_dir = getattr(self, "last_source_folder", "")
         files, _ = QFileDialog.getOpenFileNames(
             self, 
             '选择要重命名的文件', 
-            '', 
+            start_dir, 
             '所有文件 (*.*)'
         )
         if files:
             self.file_input.setText(f"已选择 {len(files)} 个文件: {files[0]}...")
             self.selected_files = files
+            # 保存当前源文件夹
+            self.last_source_folder = os.path.dirname(files[0])
             # 设置默认输出文件夹为第一个文件所在文件夹
             default_output_folder = os.path.dirname(files[0])
-            self.output_folder_input.setText(default_output_folder)
+    def on_delete_checkbox_changed(self, state):
+        if not getattr(self, '_initialized', False):
+            return
+        if state == 2:  # 勾选
+            reply = QMessageBox.question(
+                self, "确认删除", "确定要在重命名后删除原文件吗？此操作不可恢复！",
+                QMessageBox.Yes | QMessageBox.No, QMessageBox.No
+            )
+            if reply != QMessageBox.Yes:
+                self.delete_original_checkbox.setChecked(False)
+            if reply != QMessageBox.Yes:
+                self.delete_original_checkbox.setChecked(False)
 
     def start_rename(self):
         try:
@@ -180,9 +259,12 @@ class RenameToolUI(QWidget):
                 QMessageBox.warning(self, '错误', '目标文件夹不存在！')
                 return
 
+            # 获取删除原文件的选项
+            delete_original = self.delete_original_checkbox.isChecked()
+
             # 执行重命名
             success_files, failed_files = batch_rename_files(
-                self.selected_files, src_exts, target_ext, output_folder
+                self.selected_files, src_exts, target_ext, output_folder, delete_original
             )
 
             # 显示结果
@@ -200,5 +282,28 @@ class RenameToolUI(QWidget):
             self.result_label.setText(result_message)
             QMessageBox.information(self, '重命名结果', result_message)
             
+            self.save_settings()  # 操作后也保存一次
+            
         except Exception as e:
             QMessageBox.critical(self, '错误', f'发生错误：{str(e)}')
+
+    def update_style(self):
+        # 判断自定义源后缀
+        if self.src_ext_input.text().strip():
+            # 输入框高亮
+            self.src_ext_input.setStyleSheet("color: black; background: #fffbe6;")
+            # 列表灰色
+            self.src_ext_list.setStyleSheet("color: gray;")
+        else:
+            # 输入框灰色
+            self.src_ext_input.setStyleSheet("color: gray; background: #f0f0f0;")
+            # 列表高亮
+            self.src_ext_list.setStyleSheet("color: black;")
+
+        # 判断自定义目标后缀
+        if self.target_ext_input.text().strip():
+            self.target_ext_input.setStyleSheet("color: black; background: #fffbe6;")
+            self.target_ext_combo.setStyleSheet("color: gray;")
+        else:
+            self.target_ext_input.setStyleSheet("color: gray; background: #f0f0f0;")
+            self.target_ext_combo.setStyleSheet("color: black;")
